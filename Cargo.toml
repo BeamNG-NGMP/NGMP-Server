@@ -5,4 +5,9 @@ edition = "2021"
 
 [dependencies]
 log = { version = "0.4", features = ["std"] }
-tokio = { version = "1.40", features = ["macros","sync","rt-multi-thread","rt","net"] }
+tokio = { version = "1.40", features = ["macros","sync","rt-multi-thread","rt","net","time"] }
+ngmp_protocol_impl = { path = "../SL-Protocol-impl" }
+
+serde = { version = "1.0", features = ["derive"] }
+toml = { version = "0.8", features = ["preserve_order"] }
+anyhow = "1.0"
