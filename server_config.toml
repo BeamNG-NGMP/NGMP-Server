@@ -1,0 +1,7 @@
+[General]
+map = "/levels/gridmap_v2/info.json"
+
+[Networking]
+tcp_port = 42630
+udp_port = 42632
+http_port = 42631
