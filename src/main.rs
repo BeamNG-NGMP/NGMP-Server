@@ -48,7 +48,7 @@ async fn accept_client(mut tcp_conn: TcpConnection<Packet>, addr: std::net::Sock
     };
     debug!("Client version: {}", version);
     // Confirm client version
-    tcp_conn.write_packet(Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
+    tcp_conn.write_packet(&Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
 
     // Authentication packet
     // TODO: Actually use auth code to verify client identity!
@@ -62,10 +62,10 @@ async fn accept_client(mut tcp_conn: TcpConnection<Packet>, addr: std::net::Sock
     };
     debug!("Auth code: {}", auth_code);
     // Confirm auth data
-    tcp_conn.write_packet(Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
+    tcp_conn.write_packet(&Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
 
     // Send server info packet
-    tcp_conn.write_packet(Packet::ServerInfo(server_launcher::serverinfo::ServerInfoPacket {
+    tcp_conn.write_packet(&Packet::ServerInfo(server_launcher::serverinfo::ServerInfoPacket {
         http_port: config.networking.http_port,
         udp_port: config.networking.udp_port,
     })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
@@ -77,7 +77,7 @@ async fn accept_client(mut tcp_conn: TcpConnection<Packet>, addr: std::net::Sock
 
     // LoadMap packet
     let confirm_id = 8; // TODO: Generate one randomly :);
-    tcp_conn.write_packet(Packet::LoadMap(server_launcher::serverinfo::LoadMapPacket {
+    tcp_conn.write_packet(&Packet::LoadMap(server_launcher::serverinfo::LoadMapPacket {
         confirm_id,
         map_name: config.general.map.clone(),
     })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
@@ -112,7 +112,11 @@ async fn client_accept_async(config: Config, tx: mpsc::Sender<Client>) {
             Ok((socket, addr)) => {
                 info!("New connection incoming from {}", addr);
                 let tcp_conn = TcpConnection::<Packet>::from_stream(socket);
-                accept_client(tcp_conn, addr, &config).await;
+                if let Some(client) = accept_client(tcp_conn, addr, &config).await {
+                    if let Err(e) = tx.send(client).await {
+                        error!("Failed to send client over to server thread: {}", e);
+                    }
+                }
             },
             Err(e) => error!("Error accepting client: {}", e),
         }

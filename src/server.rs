@@ -41,6 +41,16 @@ impl ServerClients {
 
         packets
     }
+
+    async fn tcp_broadcast_packet(&mut self, packet: Packet) {
+        trace!("Broadcasting packet: {:?}", packet);
+        for client in &mut self.0 {
+            if let Err(e) = client.tcp_conn.write_packet(&packet).await {
+                error!("{}", e);
+                todo!();
+            }
+        }
+    }
 }
 
 struct ServerUdp(UdpListener<Packet>);
@@ -48,6 +58,8 @@ struct ServerUdp(UdpListener<Packet>);
 impl ServerUdp {
     async fn udp_gather_packets(&mut self) -> Vec<Packet> {
         let mut packets = Vec::new();
+
+        // TODO
 
         packets
     }
@@ -57,6 +69,8 @@ struct Server {
     udp: ServerUdp,
 
     clients: ServerClients,
+
+    update_player_data_flag: bool,
 }
 
 impl Server {
@@ -64,6 +78,7 @@ impl Server {
         Self {
             udp: ServerUdp(udp_socket),
             clients: ServerClients(Vec::new()),
+            update_player_data_flag: false,
         }
     }
 
@@ -71,12 +86,28 @@ impl Server {
         let tcp_packets = self.clients.tcp_gather_packets().await;
         // let udp_packets = self.udp.udp_gather_packets().await;
 
+        // info!("TICK");
+
         if tcp_packets.len() > 0 {
             debug!("tcp_packets: {:?}", tcp_packets);
+        }
+
+        if self.update_player_data_flag {
+            trace!("Update player data flag is true.");
+            self.update_player_data_flag = false;
+
+            self.clients.tcp_broadcast_packet(Packet::PlayerData(server_launcher::gameplay::PlayerDataPacket {
+                players: vec![server_launcher::gameplay::PlayerData {
+                    name: String::from("test data"),
+                    steam_id: 42069,
+                }],
+            })).await;
         }
     }
 
     async fn add_client(&mut self, client: Client) {
+        trace!("Client arrived at server");
+        self.update_player_data_flag = true;
         self.clients.0.push(client);
     }
 }
@@ -106,5 +137,6 @@ pub async fn server_main(mut rx: mpsc::Receiver<Client>, udp_listener: UdpListen
             _ = server.tick() => {},
             _ = interval.tick() => {},
         );
+        interval.tick().await;
     }
 }
