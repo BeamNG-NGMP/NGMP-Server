@@ -9,11 +9,10 @@ use ngmp_protocol_impl::{
 use ngmp_protocol_impl::server_launcher::Packet;
 
 mod logger;
-
 mod config;
-
 mod data;
 mod server;
+mod http;
 
 use config::Config;
 use server::*;
@@ -53,16 +52,26 @@ async fn accept_client(mut tcp_conn: TcpConnection<Packet>, addr: std::net::Sock
     // Authentication packet
     // TODO: Actually use auth code to verify client identity!
     let packet = tcp_conn.wait_for_packet().await.map_err(|e| error!("Client error: {}", e)).ok()?;
-    let (auth_code, confirm_id) = match packet {
-        Packet::Authentication(p) => (p.auth_code, p.confirm_id),
+    let auth_data = match packet {
+        Packet::Authentication(p) => p,
         _ => {
             error!("Incorrect packet sent: {:?}", packet);
             return None;
         }
     };
-    debug!("Auth code: {}", auth_code);
-    // Confirm auth data
-    tcp_conn.write_packet(&Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
+    let user_info = match http::auth_token_get_steam_info(&auth_data.auth_code).await {
+        Ok(user_info) => {
+            // Confirm auth data
+            tcp_conn.write_packet(&Packet::Confirmation(server_launcher::generic::ConfirmationPacket { confirm_id: auth_data.confirm_id })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
+            user_info
+        },
+        Err(e) => {
+            error!("{}", e);
+            // Kick client as we cannot authenticate them!
+            tcp_conn.write_packet(&Packet::PlayerKick(server_launcher::generic::PlayerKickPacket { reason: String::from("Failed to authenticate!") })).await.map_err(|e| error!("Client error: {}", e)).ok()?;
+            return None;
+        }
+    };
 
     // Send server info packet
     tcp_conn.write_packet(&Packet::ServerInfo(server_launcher::serverinfo::ServerInfoPacket {
@@ -87,10 +96,13 @@ async fn accept_client(mut tcp_conn: TcpConnection<Packet>, addr: std::net::Sock
     match packet {
         Packet::Confirmation(p) => {
             if p.confirm_id == confirm_id {
-                Some(Client {
+                Some(Client::new(
                     tcp_conn,
                     udp_addr,
-                })
+
+                    user_info.steam_id,
+                    user_info.user,
+                ))
             } else {
                 error!("Invalid confirmation ID");
                 None
